@@ -1,1 +1,233 @@
 
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Block Blast | 15 фигур</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body { min-height: 100vh; background: linear-gradient(135deg, #1a1a2e, #0f3460); font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .game-container { max-width: 600px; width: 100%; background: rgba(0,0,0,0.5); border-radius: 40px; padding: 20px; }
+        .header h1 { font-size: 1.8rem; color: #ffd966; text-align: center; }
+        .score { text-align: center; background: #00000066; display: inline-block; padding: 5px 20px; border-radius: 40px; margin: 10px auto; width: auto; }
+        .score span { font-size: 1.8rem; font-weight: bold; color: #ffd966; }
+        .board { display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1/1; background: #0f0f23; gap: 2px; padding: 4px; border-radius: 20px; }
+        .cell { background: #1e1f3a; border-radius: 6px; aspect-ratio: 1/1; }
+        .cell.filled { background: linear-gradient(145deg, #ffd966, #ffaa00); }
+        .cell.preview { background: #ffd96688; transform: scale(0.95); }
+        .cell.preview-invalid { background: #ff444488; transform: scale(0.95); }
+        .pieces { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+        .piece { background: #0a0e1c; padding: 6px; border-radius: 14px; cursor: grab; }
+        .piece:active { cursor: grabbing; }
+        .piece-grid { display: grid; gap: 2px; }
+        .piece-cell { width: 28px; height: 28px; background: #2a2f50; border-radius: 5px; }
+        .piece-cell.filled { background: #ffd966; }
+        .reset-btn { background: #ffaa33; border: none; padding: 10px; border-radius: 40px; font-size: 1rem; font-weight: bold; margin-top: 15px; width: 100%; cursor: pointer; }
+        .info { text-align: center; margin-top: 10px; font-size: 0.75rem; color: #ffd966aa; }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <div class="header"><h1>🧩 BLOCK BLAST | 15 ФИГУР</h1></div>
+    <div class="score">🎯 счёт: <span id="scoreValue">0</span></div>
+    <div class="board" id="board"></div>
+    <div class="pieces" id="piecesContainer"></div>
+    <button class="reset-btn" id="resetBtn">🔄 новая игра</button>
+    <div class="info">✨ 15 разных фигур! перетащи на поле ✨</div>
+</div>
+
+<script>
+    const SIZE = 8;
+    let board = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
+    let currentPieces = [];
+    let score = 0;
+    let draggedPieceIndex = null;
+
+    const ALL_SHAPES = [
+        [[1,1,1]],
+        [[1,1,1,1]],
+        [[1],[1],[1]],
+        [[1],[1],[1],[1]],
+        [[1,1],[1,1]],
+        [[1,1,1],[1,1,1],[1,1,1]],
+        [[1,1],[1,0]],
+        [[1,1],[0,1]],
+        [[1,1,1],[1,0,0],[1,0,0]],
+        [[1,1,1],[0,0,1],[0,0,1]],
+        [[0,1,0],[1,1,1],[0,1,0]],
+        [[1,1,0],[0,1,1]],
+        [[1,0],[1,1],[0,1]],
+        [[1,1,1],[1,1,1]],
+        [[1,0],[1,0],[1,1]]
+    ];
+
+    function getRandomShape() {
+        const idx = Math.floor(Math.random() * ALL_SHAPES.length);
+        return ALL_SHAPES[idx].map(row => [...row]);
+    }
+
+    function generateRandomStart() {
+        board = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
+        const blockCount = Math.floor(Math.random() * 15) + 5;
+        let cells = [];
+        for(let i = 0; i < SIZE; i++)
+            for(let j = 0; j < SIZE; j++)
+                cells.push({row: i, col: j});
+        for(let i = cells.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [cells[i], cells[j]] = [cells[j], cells[i]];
+        }
+        for(let k = 0; k < blockCount; k++)
+            if(k < cells.length) {
+                const {row, col} = cells[k];
+                board[row][col] = 1;
+            }
+    }
+    
+    function canPlace(shape, r, c) {
+        for(let i = 0; i < shape.length; i++)
+            for(let j = 0; j < shape[0].length; j++)
+                if(shape[i][j] && (r+i >= SIZE || c+j >= SIZE || board[r+i][c+j] === 1))
+                    return false;
+        return true;
+    }
+
+    function placeShape(shape, r, c) {
+        for(let i = 0; i < shape.length; i++)
+            for(let j = 0; j < shape[0].length; j++)
+                if(shape[i][j]) board[r+i][c+j] = 1;
+        renderBoard();
+        checkLines();
+    }
+
+    function checkLines() {
+        let rows = [], cols = [];
+        for(let i = 0; i < SIZE; i++) {
+            let fullRow = true, fullCol = true;
+            for(let j = 0; j < SIZE; j++) {
+                if(board[i][j] === 0) fullRow = false;
+                if(board[j][i] === 0) fullCol = false;
+            }
+            if(fullRow) rows.push(i);
+            if(fullCol) cols.push(i);
+        }
+        for(let r of rows) for(let j = 0; j < SIZE; j++) board[r][j] = 0;
+        for(let c of cols) for(let i = 0; i < SIZE; i++) board[i][c] = 0;
+        let addScore = (rows.length + cols.length) * 10;
+        if(addScore > 0) {
+            score += addScore;
+            document.getElementById('scoreValue').innerText = score;
+            renderBoard();
+        }
+    }
+    
+    function tryPlacePiece(idx, row, col) {
+        const shape = currentPieces[idx];
+        if(canPlace(shape, row, col)) {
+            placeShape(shape, row, col);
+            currentPieces.splice(idx,1);
+            if(currentPieces.length === 0) {
+                for(let i=0;i<3;i++) currentPieces.push(getRandomShape());
+                document.getElementById('gameInfo').innerHTML = '✨ +3 новые фигуры! ✨';
+                setTimeout(() => document.getElementById('gameInfo').innerHTML = '✨ 15 фигур! ✨', 1500);
+            } else {
+                document.getElementById('gameInfo').innerHTML = `🎯 осталось: ${currentPieces.length} 🎯`;
+                setTimeout(() => document.getElementById('gameInfo').innerHTML = '✨ 15 фигур! ✨', 1500);
+            }
+            renderPieces();
+            renderBoard();
+            return true;
+        }
+        return false;
+    }
+    
+    function renderBoard() {
+        const boardEl = document.getElementById('board');
+        boardEl.innerHTML = '';
+        for(let i=0;i<SIZE;i++) {
+            for(let j=0;j<SIZE;j++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                if(board[i][j] === 1) cell.classList.add('filled');
+                cell.setAttribute('data-row',i);
+                cell.setAttribute('data-col',j);
+                cell.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    if(draggedPieceIndex !== null) {
+                        const r = parseInt(e.currentTarget.getAttribute('data-row'));
+                        const c = parseInt(e.currentTarget.getAttribute('data-col'));
+                        const shape = currentPieces[draggedPieceIndex];
+                        if(shape) {
+                            const isValid = canPlace(shape, r, c);
+                            document.querySelectorAll('.cell').forEach(el => el.classList.remove('preview','preview-invalid'));
+                            for(let x=0;x<shape.length;x++)
+                                for(let y=0;y<shape[0].length;y++)
+                                    if(shape[x][y] && r+x<SIZE && c+y<SIZE) {
+                                        const idxCell = (r+x)*SIZE + (c+y);
+                                        const el = document.querySelectorAll('.cell')[idxCell];
+                                        if(el) el.classList.add(isValid ? 'preview' : 'preview-invalid');
+                                    }
+                        }
+                    }
+                });
+                cell.addEventListener('dragleave', () => {
+                    document.querySelectorAll('.cell').forEach(el => el.classList.remove('preview','preview-invalid'));
+                });
+                cell.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    document.querySelectorAll('.cell').forEach(el => el.classList.remove('preview','preview-invalid'));
+                    if(draggedPieceIndex !== null) {
+                        const r = parseInt(e.currentTarget.getAttribute('data-row'));
+                        const c = parseInt(e.currentTarget.getAttribute('data-col'));
+                        tryPlacePiece(draggedPieceIndex, r, c);
+                        draggedPieceIndex = null;
+                    }
+                });
+                boardEl.appendChild(cell);
+            }
+        }
+    }
+    
+    function renderPieces() {
+        const container = document.getElementById('piecesContainer');
+        container.innerHTML = '';
+        currentPieces.forEach((shape, idx) => {
+            const pieceDiv = document.createElement('div');
+            pieceDiv.className = 'piece';
+            pieceDiv.setAttribute('draggable','true');
+            const grid = document.createElement('div');
+            grid.className = 'piece-grid';
+            grid.style.gridTemplateColumns = `repeat(${shape[0].length},1fr)`;
+            for(let r=0;r<shape.length;r++)
+                for(let c=0;c<shape[0].length;c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'piece-cell';
+                    if(shape[r][c]) cell.classList.add('filled');
+                    grid.appendChild(cell);
+                }
+            pieceDiv.appendChild(grid);
+            pieceDiv.addEventListener('dragstart', (e) => { draggedPieceIndex = idx; pieceDiv.classList.add('dragging'); e.dataTransfer.setData('text/plain',idx); });
+            pieceDiv.addEventListener('dragend', () => { pieceDiv.classList.remove('dragging'); draggedPieceIndex = null; });
+            container.appendChild(pieceDiv);
+        });
+    }
+    
+    function resetGame() {
+        generateRandomStart();
+        score = 0;
+        document.getElementById('scoreValue').innerText = score;
+        currentPieces = [];
+        for(let i=0;i<3;i++) currentPieces.push(getRandomShape());
+        renderPieces();
+        renderBoard();
+        draggedPieceIndex = null;
+    }
+    
+    generateRandomStart();
+    for(let i=0;i<3;i++) currentPieces.push(getRandomShape());
+    renderPieces();
+    renderBoard();
+    document.getElementById('resetBtn').addEventListener('click', resetGame);
+</script>
+</body>
+</html>
